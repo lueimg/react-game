@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Document</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.22.1/babel.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/15.4.2/react.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/15.4.2/react-dom.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.4/lodash.js"></script>
+    
+<style> 
+    body {
+text-align: center; }
+.cell {
+width: 100px; height: 100px;
+display: inline-block; border: 1px solid #aaa; background: #f8f8f8; margin-right: 4px;
+}
+.active {
+background-color: #058BDA;
+}
+
+.guess-true { background-color: #00CC00;
+}
+.guess-false {
+background-color: #CC0000 }
+
+
+ </style>
+
+</head>
+<body>
+    <div id="app"></div>
+
+    <script type="text/babel">
+
+    class Container extends React.Component {
+        constructor(props) {
+            super(props);
+            this.state = { gameId: 1 };
+        }
+
+        createNewGame() {
+            this.setState({
+                gameId: this.state.gameId + 1
+            })
+        }
+
+        render () {
+            return (
+                <div>
+                    <Game   key={this.state.gameId}
+                            createNewGame={this.createNewGame.bind(this)}
+                            rows={5} columns={5} activeCellsCount={6}></Game>
+                </div>
+            )
+        }
+    }
+
+    class Row extends React.Component {
+        render () {
+            return (
+                <div className="row">
+                    {this.props.children}
+                </div>
+            )
+        }
+    }
+
+    class Cell extends React.Component {
+        active() {
+            return this.props.activeCells.indexOf(this.props.id) >= 0;
+        }
+
+        showActiveCells () {
+            return ['memorize', 'lost'].indexOf(this.props.gameState) >= 0;
+        }
+
+        handleClick () {
+            if (this.guessState() === undefined && this.props.gameState === 'recall') {
+                this.props.recordGuess({
+                    cellId: this.props.id,
+                    userGuessIsCorrect: this.active()
+                })
+            }
+        }
+
+        guessState() {
+            if (this.props.correctGuesses.indexOf(this.props.id) >= 0) {
+                return true;
+            }else if (this.props.wrongGuesses.indexOf(this.props.id) >= 0){
+                return false;
+            }
+
+        }
+
+        render ()  {
+            let className = 'cell';
+            if (this.props.gameState === 'memorize' && this.active()) {
+                className += " active";
+            }
+            className += " guess-" + this.guessState();
+            
+            if (this.showActiveCells() && this.active()) {
+                className += " active"
+            }
+
+            return (
+                <div className={className} onClick={this.handleClick.bind(this)}>
+                    {this.props.id}
+                </div>
+            )
+        }
+    }
+
+    class Game extends React.Component {
+        constructor (props) {
+            super(props);
+            this.state = { 
+                gameState: 'ready',
+                wrongGuesses: [],
+                correctGuesses: []
+                
+            };
+
+             this.matrix = [];
+             let row;
+                 for (let r = 0; r < this.props.rows; r++) {
+                     row = [];
+                    for (let c= 0; c < this.props.columns; c++) {
+                        row.push(`${r}${c}`)
+                    }
+                    this.matrix.push(row);
+                     
+                 }
+
+            let flatMatrix = _.flatten(this.matrix);
+            this.activeCells = _.sampleSize(flatMatrix, this.props.activeCellsCount)
+
+        }
+
+        recordGuess({ cellId, userGuessIsCorrect }) {
+            let { wrongGuesses, correctGuesses, gameState} = this.state;
+            if (userGuessIsCorrect) {
+                correctGuesses.push(cellId);
+                if (correctGuesses.length === this.props.activeCellsCount) {
+                    gameState = 'won';
+                    gameState = this.finishGame('won');
+                }
+            } else {
+                wrongGuesses.push(cellId);
+                if (wrongGuesses.length > this.props.allowedWrongAttemps) {
+                    gameState = 'lost';
+                    gameState = this.finishGame('lost');
+                }
+            }
+            this.setState({ correctGuesses, wrongGuesses, gameState });
+        }
+
+        componentDidMount() {
+            this.memorizeTimerId = setTimeout(() => {
+                this.setState({gameState: 'memorize'}, () => {
+                    this.recallTimerId = setTimeout(this.startRecallMode.bind(this), 2000)
+                })
+            }, 2000);
+            
+        }
+
+        startRecallMode () {
+            this.setState({ gameState: 'recall'}, () => {
+                this.secondsRemaining = this.props.timeoutSeconds;
+                this.playTimerId = setInterval(() => {
+                    if (--this.secondsRemaining === 0) {
+                        this.setState({gameState: 'lost'})
+                    }
+                }, 1000);
+            })
+        }
+
+        finishGame(gameState) {
+            clearInterval(this.playTimerId);
+            return gameState;
+        }
+        componentWillUnmount() {
+            clearTimeout(this.memorizeTimerId)
+            clearTimeout(this.recallTimerId)
+            this.finishGame();
+        }
+
+
+         render () {
+            
+            let showActiveCells = ['memorize', 'lost'].indexOf(this.state.gameState) >= 0;
+
+             return (
+                 <div className="grid">
+                     {this.matrix.map((row, ri) => (
+                         <Row key={ri}>
+                             {row.map(cellId => (
+                                 <Cell 
+                                    key={cellId} 
+                                    id={cellId}
+                                    showActiveCells={showActiveCells}
+                                    recordGuess={this.recordGuess.bind(this)}
+                                    activeCells={this.activeCells} 
+                                    {...this.state} />
+                             ))}
+                        </Row>
+                     ))}
+
+                     <Footer {...this.state} 
+                            playAgain={this.props.createNewGame}
+                            activeCellsCount={this.props.activeCellsCount} />
+
+                 </div>
+
+             )
+         }
+    }
+
+    Game.defaultProps = {
+        allowedWrongAttemps: 2,
+        timeoutSeconds: 10
+    }
+
+    class Footer extends React.Component {
+        playAgainButton() {
+            if(['won', 'lost'].indexOf(this.props.gameState) >= 0) {
+                return (
+                    <button className='play-again-button'
+                            onClick={this.props.playAgain}>
+                            Play Again
+                    </button>
+                )
+            }
+        }
+        remainingCount () {
+            if (this.props.gameState !== 'recall') {return null;}
+            return (
+                <div className='remaining-count'>
+                    {this.props.activeCellsCount - this.props.correctGuesses.length}
+                </div>
+            )
+        }
+        render () {
+            return (
+                <div className="footer">
+                    <div className="hint">
+                        {this.props.hints[this.props.gameState]}...
+                    </div>
+
+                    {this.remainingCount()}
+                    {this.playAgainButton()}
+
+                </div>
+            )
+        }
+    }
+    Footer.defaultProps = {
+        hints: {
+            ready: 'get ready',
+            memorize: 'memorize',
+            recall: 'recall',
+            won: 'well played',
+            lost: 'game over'
+        }
+    }
+
+        
+            ReactDOM.render(<Container />, document.getElementById("app"));
+
+    </script>
+</body>
+</html>
